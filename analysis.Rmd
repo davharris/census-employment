@@ -1,0 +1,78 @@
+---
+title: "Relationships between employment sectors"
+author: "David J. Harris"
+date: "10/31/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+The US Census Bureau collects data every year about economic activity across
+sectors of the US economy and across regions as part of the County Business 
+Patterns (CBP) program. The CBP data for 2014 is available
+from their website, where it can be downloaded and imported easily:
+
+```{r}
+library(tidyverse)
+library(readr)
+```
+
+
+```{r, cache = TRUE}
+if(!file.exists("CB1400A11.zip")){
+  download.file("http://www2.census.gov/econ2014/CB/sector00/CB1400A11.zip",
+                "CB1400A11.zip")
+  unzip("CB1400A11.zip")
+}
+raw_CB_data = read_delim("CB1400A11.dat", delim = "|")
+```
+
+
+For this analysis, I will focus on the county level (i.e. regions whose
+value for `COUNTY` is not 1 or 999), and on the three-digit version of the
+North American Industry Classification System (NAICS2012), which provides
+enough granularity to get a good picture of a county's economy, but which
+has a manageable number of categories.
+
+The following code generates a table with one row per county and one
+column per employment sector, with entries describing the number of 
+employees working in each sector in the first quarter of 2014.
+
+```{r}
+spread_data = raw_CB_data %>% 
+  filter(nchar(as.character(NAICS2012)) == 3) %>% 
+  filter(COUNTY %in% 2:998) %>% 
+  distinct(GEO_ID, GEO_TTL, NAICS2012_TTL, EMP) %>% 
+  spread(NAICS2012_TTL, EMP, fill = 0)
+
+
+counts = select(spread_data, -starts_with("GEO")) %>% 
+  filter(rowSums(.) > 0) %>% 
+  select(which(colSums(.) > 0))
+```
+
+
+We can visualize the correlations among percent employment in each sector
+as follows:
+
+```{r, fig.height=1000, fig.width=1000}
+reshape2::melt(cor(as.matrix(counts) / rowSums(counts)) * upper.tri(cor(counts))) %>% 
+  ggplot(aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() + 
+  scale_fill_gradient2() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Surprisingly, the correlations are generally quite weak (96% below
+0.1), indicating that the sectors tend not to rely heavily on one another
+at the county level. 
+
+The few highly-correlated pairs are generally unsurprising, however. For
+example, management employment is correlated with financial activity and
+motion picture production, which typically involve large companies, and tends
+to be a smaller sector of the economy in regions dominated by gas stations
+and restaurants.
+
